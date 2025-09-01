@@ -19,6 +19,15 @@ trap_with_arg() {
     done
 }
 
+graceful_shutdown() {
+  echo "Caught $1 - Graceful shutdown initiated"
+  kill -SIGINT "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
+
+  wait "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
+
+  deregister_runner $1
+}
+
 deregister_runner() {
   echo "Caught $1 - Deregistering runner"
   if [[ -n "${ACCESS_TOKEN}" ]]; then
@@ -223,7 +232,7 @@ fi
 
 if [[ ${_DISABLE_AUTOMATIC_DEREGISTRATION} == "false" ]]; then
   if [[ ${_DEBUG_ONLY} == "false" ]]; then
-    trap_with_arg deregister_runner SIGINT SIGQUIT SIGTERM INT TERM QUIT
+    trap_with_arg graceful_shutdown SIGINT SIGQUIT SIGTERM INT TERM QUIT
   fi
 fi
 
