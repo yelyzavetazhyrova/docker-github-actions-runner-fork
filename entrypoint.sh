@@ -19,11 +19,25 @@ trap_with_arg() {
     done
 }
 
+# graceful_shutdown() {
+#   echo "Caught $1 - Graceful shutdown initiated"
+#   kill -SIGINT "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
+
+#   wait "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
+
+#   deregister_runner $1
+# }
+
 graceful_shutdown() {
   echo "Caught $1 - Graceful shutdown initiated"
-  kill -SIGINT "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
-
-  wait "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
+  PID=$(pgrep -f 'bin/Runner.Listener')
+  if [[ -n "$PID" ]]; then
+    kill -SIGINT "$PID"
+    echo "Waiting for Runner.Listener (PID $PID) to exit..."
+    wait "$PID"
+  else
+    echo "Runner.Listener not running"
+  fi
 
   deregister_runner $1
 }
