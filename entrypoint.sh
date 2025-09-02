@@ -28,17 +28,37 @@ trap_with_arg() {
 #   deregister_runner $1
 # }
 
-graceful_shutdown() {
-  echo "Caught $1 - Graceful shutdown initiated"
-  PID=$(pgrep -f 'bin/Runner.Listener')
-  if [[ -n "$PID" ]]; then
-    kill -SIGINT "$PID"
-    echo "Waiting for Runner.Listener (PID $PID) to exit..."
-    wait "$PID"
-  else
-    echo "Runner.Listener not running"
-  fi
+# graceful_shutdown() {
+#   echo "Caught $1 - Graceful shutdown initiated"
+#   PID=$(pgrep -f 'bin/Runner.Listener')
+#   if [[ -n "$PID" ]]; then
+#     kill -SIGINT "$PID"
+#     echo "Waiting for Runner.Listener (PID $PID) to exit..."
+#     wait "$PID"
+#   else
+#     echo "Runner.Listener not running"
+#   fi
 
+#   deregister_runner $1
+# }
+
+# graceful_shutdown() {
+#   echo "Caught $1 - delaying shutdown until job finishes"
+#   PID=$(pgrep -f 'bin/Runner.Listener')
+#   if [[ -n "$PID" ]]; then
+#     echo "Runner.Listener is running (PID $PID), waiting..."
+#     wait "$PID"
+#   fi
+
+#   deregister_runner $1
+# }
+
+graceful_shutdown() {
+  echo "Caught $1 - delaying shutdown until job finishes"
+  if [[ -n "$RUNNER_PID" ]]; then
+    echo "Runner.Listener is running (PID $RUNNER_PID), waiting..."
+    wait "$RUNNER_PID"
+  fi
   deregister_runner $1
 }
 
@@ -291,7 +311,10 @@ if [[ ${_RUN_AS_ROOT} == "true" ]]; then
       echo "Running $@"
     fi
     if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      "$@"
+      "$@" &
+      RUNNER_PID=$!
+      echo "Runner.Listener started with PID $RUNNER_PID"
+      wait $RUNNER_PID
     fi
   else
     echo "ERROR: RUN_AS_ROOT env var is set to true but the user has been overridden and is not running as root, but UID '$(id -u)'"
@@ -308,7 +331,9 @@ else
       echo "Running /usr/sbin/gosu runner $@"
     fi
     if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      /usr/sbin/gosu runner "$@"
+      /usr/sbin/gosu runner "$@" &
+      RUNNER_PID=$!
+      wait $RUNNER_PID
     fi
   else
     if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
@@ -316,7 +341,9 @@ else
       echo "Running $@"
     fi
     if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      "$@"
+      "$@" &
+      RUNNER_PID=$!
+      wait $RUNNER_PID
     fi
   fi
 fi
