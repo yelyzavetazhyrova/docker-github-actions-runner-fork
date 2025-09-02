@@ -4,66 +4,19 @@
 export RUNNER_ALLOW_RUNASROOT=1
 export PATH=${PATH}:/actions-runner
 
-# Un-export these, so that they must be passed explicitly to the environment of
-# any command that needs them.  This may help prevent leaks.
 export -n ACCESS_TOKEN
 export -n RUNNER_TOKEN
 export -n APP_ID
 export -n APP_PRIVATE_KEY
 
-trap_with_arg() {
-    func="$1" ; shift
-    for sig ; do
-        # shellcheck disable=SC2064
-        trap "$func $sig" "$sig"
-    done
-}
-
-# graceful_shutdown() {
-#   echo "Caught $1 - Graceful shutdown initiated"
-#   kill -SIGINT "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
-
-#   wait "$(pgrep -f 'bin/Runner.Listener')" 2>/dev/null
-
-#   deregister_runner $1
-# }
-
-graceful_shutdown() {
-  echo "Caught $1 - Graceful shutdown initiated"
-  PID=$(pgrep -f 'bin/Runner.Listener')
-  if [[ -n "$PID" ]]; then
-    kill -SIGINT "$PID"
-    echo "Waiting for Runner.Listener (PID $PID) to exit..."
-    wait "$PID"
-  else
-    echo "Runner.Listener not running"
-  fi
-
-  deregister_runner $1
-}
-
-deregister_runner() {
-  echo "Caught $1 - Deregistering runner"
-  if [[ -n "${ACCESS_TOKEN}" ]]; then
-    _TOKEN=$(ACCESS_TOKEN="${ACCESS_TOKEN}" bash /token.sh)
-    RUNNER_TOKEN=$(echo "${_TOKEN}" | jq -r .token)
-  fi
-  ./config.sh remove --token "${RUNNER_TOKEN}"
-  [[ -f "/actions-runner/.runner" ]] && rm -f /actions-runner/.runner
-  exit
-}
-
 _DEBUG_ONLY=${DEBUG_ONLY:-false}
 _DEBUG_OUTPUT=${DEBUG_OUTPUT:-false}
 _DISABLE_AUTOMATIC_DEREGISTRATION=${DISABLE_AUTOMATIC_DEREGISTRATION:-false}
-
 _RANDOM_RUNNER_SUFFIX=${RANDOM_RUNNER_SUFFIX:="true"}
 
 _RUNNER_NAME=${RUNNER_NAME:-${RUNNER_NAME_PREFIX:-github-runner}-$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 13 ; echo '')}
 if [[ ${RANDOM_RUNNER_SUFFIX} != "true" ]]; then
-  # In some cases this file does not exist
   if [[ -f "/etc/hostname" ]]; then
-    # in some cases it can also be empty
     if [[ $(stat --printf="%s" /etc/hostname) -ne 0 ]]; then
       _RUNNER_NAME_PREFIX=${RUNNER_NAME_PREFIX-"github-runner"}
       _RUNNER_NAME=${RUNNER_NAME:-${_RUNNER_NAME_PREFIX:+${_RUNNER_NAME_PREFIX}-}$(cat /etc/hostname)}
@@ -85,7 +38,6 @@ _START_DOCKER_SERVICE=${START_DOCKER_SERVICE:="false"}
 _UNSET_CONFIG_VARS=${UNSET_CONFIG_VARS:="false"}
 _CONFIGURED_ACTIONS_RUNNER_FILES_DIR=${CONFIGURED_ACTIONS_RUNNER_FILES_DIR:-""}
 
-# ensure backwards compatibility
 if [[ -z ${RUNNER_SCOPE} ]]; then
   if [[ ${ORG_RUNNER} == "true" ]]; then
     echo 'ORG_RUNNER is now deprecated. Please use RUNNER_SCOPE="org" instead.'
@@ -95,7 +47,7 @@ if [[ -z ${RUNNER_SCOPE} ]]; then
   fi
 fi
 
-RUNNER_SCOPE="${RUNNER_SCOPE,,}" # to lowercase
+RUNNER_SCOPE="${RUNNER_SCOPE,,}"
 
 case ${RUNNER_SCOPE} in
   org*)
@@ -106,13 +58,11 @@ case ${RUNNER_SCOPE} in
       APP_LOGIN=${ORG_NAME}
     fi
     ;;
-
   ent*)
     [[ -z ${ENTERPRISE_NAME} ]] && ( echo "ENTERPRISE_NAME required for enterprise runners"; exit 1 )
     _SHORT_URL="https://${_GITHUB_HOST}/enterprises/${ENTERPRISE_NAME}"
     RUNNER_SCOPE="enterprise"
     ;;
-
   *)
     [[ -z ${REPO_URL} ]] && ( echo "REPO_URL required for repo runners"; exit 1 )
     _SHORT_URL=${REPO_URL}
@@ -139,29 +89,23 @@ configure_runner() {
     echo "ERROR: All of APP_ID, APP_PRIVATE_KEY and APP_LOGIN must be specified." >&2
     exit 1
   fi
-
   if [[ -n "${ACCESS_TOKEN}" ]]; then
     echo "Obtaining the token of the runner"
     _TOKEN=$(ACCESS_TOKEN="${ACCESS_TOKEN}" bash /token.sh)
     RUNNER_TOKEN=$(echo "${_TOKEN}" | jq -r .token)
   fi
-
-  # shellcheck disable=SC2153
   if [ -n "${EPHEMERAL}" ]; then
     echo "Ephemeral option is enabled"
     ARGS+=("--ephemeral")
   fi
-
   if [ -n "${DISABLE_AUTO_UPDATE}" ]; then
     echo "Disable auto update option is enabled"
     ARGS+=("--disableupdate")
   fi
-
   if [ -n "${NO_DEFAULT_LABELS}" ]; then
     echo "Disable adding the default self-hosted, platform, and architecture labels"
     ARGS+=("--no-default-labels")
   fi
-
   echo "Configuring"
   ./config.sh \
       --url "${_SHORT_URL}" \
@@ -173,53 +117,22 @@ configure_runner() {
       --unattended \
       --replace \
       "${ARGS[@]}"
-
   [[ ! -d "${_RUNNER_WORKDIR}" ]] && mkdir -p "${_RUNNER_WORKDIR}"
-
 }
 
 unset_config_vars() {
-  echo "Unsetting configuration environment variables"
-  unset RUN_AS_ROOT
-  unset RUNNER_NAME
-  unset RUNNER_NAME_PREFIX
-  unset RANDOM_RUNNER_SUFFIX
-  unset ACCESS_TOKEN
-  unset APP_ID
-  unset APP_PRIVATE_KEY
-  unset APP_LOGIN
-  unset RUNNER_SCOPE
-  unset ORG_NAME
-  unset ENTERPRISE_NAME
-  unset LABELS
-  unset REPO_URL
-  unset RUNNER_TOKEN
-  unset RUNNER_WORKDIR
-  unset RUNNER_GROUP
-  unset GITHUB_HOST
-  unset DISABLE_AUTOMATIC_DEREGISTRATION
-  unset CONFIGURED_ACTIONS_RUNNER_FILES_DIR
-  unset EPHEMERAL
-  unset DISABLE_AUTO_UPDATE
-  unset START_DOCKER_SERVICE
-  unset NO_DEFAULT_LABELS
-  unset UNSET_CONFIG_VARS
+  unset RUN_AS_ROOT; unset RUNNER_NAME; unset RUNNER_NAME_PREFIX; unset RANDOM_RUNNER_SUFFIX; unset ACCESS_TOKEN; unset APP_ID; unset APP_PRIVATE_KEY; unset APP_LOGIN; unset RUNNER_SCOPE; unset ORG_NAME; unset ENTERPRISE_NAME; unset LABELS; unset REPO_URL; unset RUNNER_TOKEN; unset RUNNER_WORKDIR; unset RUNNER_GROUP; unset GITHUB_HOST; unset DISABLE_AUTOMATIC_DEREGISTRATION; unset CONFIGURED_ACTIONS_RUNNER_FILES_DIR; unset EPHEMERAL; unset DISABLE_AUTO_UPDATE; unset START_DOCKER_SERVICE; unset NO_DEFAULT_LABELS; unset UNSET_CONFIG_VARS
 }
 
-# Opt into runner reusage because a value was given
 if [[ -n "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}" ]]; then
   echo "Runner reusage is enabled"
-
-  # directory exists, copy the data
   if [[ -d "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}" ]]; then
     echo "Copying previous data"
     cp -p -r "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}/." "/actions-runner"
   fi
-
   if [ -f "/actions-runner/.runner" ]; then
     echo "The runner has already been configured"
   else
-
     if [[ ${_DEBUG_ONLY} == "false" ]]; then
       configure_runner
     fi
@@ -238,24 +151,13 @@ if [[ -n "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}" ]]; then
     echo "DISABLE_AUTOMATIC_DEREGISTRATION should be set to true to avoid issues with re-using a deregistered runner."
     exit 1
   fi
-  # Quoting (even with double-quotes) the regexp brokes the copying
   cp -p -r "/actions-runner/_diag" "/actions-runner/svc.sh" /actions-runner/.[^.]* "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}"
 fi
 
-
-
-if [[ ${_DISABLE_AUTOMATIC_DEREGISTRATION} == "false" ]]; then
-  if [[ ${_DEBUG_ONLY} == "false" ]]; then
-    trap_with_arg graceful_shutdown SIGINT SIGQUIT SIGTERM INT TERM QUIT
-  fi
-fi
-
-# Start docker service if needed (e.g. for docker-in-docker)
 if [[ ${_START_DOCKER_SERVICE} == "true" ]]; then
   echo "Starting docker service"
   _PREFIX=""
   [[ ${_RUN_AS_ROOT} != "true" ]] && _PREFIX="sudo"
-
   if [[ ${_DEBUG_ONLY} == "true" ]]; then
     echo ${_PREFIX} service docker start
   else
@@ -263,13 +165,9 @@ if [[ ${_START_DOCKER_SERVICE} == "true" ]]; then
   fi
 fi
 
-# Unset configuration environment variables if the flag is set
 if [[ ${_UNSET_CONFIG_VARS} == "true" ]]; then
   unset_config_vars
 fi
-
-# Container's command (CMD) execution as runner user
-
 
 if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
   echo ""
@@ -284,39 +182,40 @@ if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
   echo "Start docker: ${_START_DOCKER_SERVICE}"
 fi
 
-if [[ ${_RUN_AS_ROOT} == "true" ]]; then
-  if [[ $(id -u) -eq 0 ]]; then
-    if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
-      # shellcheck disable=SC2145
-      echo "Running $@"
+start_runner() {
+    if [[ ${_RUN_AS_ROOT} == "true" ]]; then
+      if [[ $(id -u) -eq 0 ]]; then
+        if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
+          echo "Running $@"
+        fi
+        if [[ ${_DEBUG_ONLY} == "false" ]]; then
+          "$@"
+        fi
+      else
+        echo "ERROR: RUN_AS_ROOT env var is set to true but the user has been overridden and is not running as root, but UID '$(id -u)'"
+        exit 1
+      fi
+    else
+      if [[ $(id -u) -eq 0 ]]; then
+        [[ -n "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}" ]] && chown -R runner "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}"
+        chown -R runner "${_RUNNER_WORKDIR}" /actions-runner
+        chown runner /opt/hostedtoolcache/
+        if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
+          echo "Running /usr/sbin/gosu runner $@"
+        fi
+        if [[ ${_DEBUG_ONLY} == "false" ]]; then
+          /usr/sbin/gosu runner "$@"
+        fi
+      else
+        if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
+          echo "Running $@"
+        fi
+        if [[ ${_DEBUG_ONLY} == "false" ]]; then
+          "$@"
+        fi
+      fi
     fi
-    if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      "$@"
-    fi
-  else
-    echo "ERROR: RUN_AS_ROOT env var is set to true but the user has been overridden and is not running as root, but UID '$(id -u)'"
-    exit 1
-  fi
-else
-  if [[ $(id -u) -eq 0 ]]; then
-    [[ -n "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}" ]] && chown -R runner "${_CONFIGURED_ACTIONS_RUNNER_FILES_DIR}"
-    chown -R runner "${_RUNNER_WORKDIR}" /actions-runner
-    # The toolcache is not recursively chowned to avoid recursing over prepulated tooling in derived docker images
-    chown runner /opt/hostedtoolcache/
-    if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
-      # shellcheck disable=SC2145
-      echo "Running /usr/sbin/gosu runner $@"
-    fi
-    if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      /usr/sbin/gosu runner "$@"
-    fi
-  else
-    if [[ ${_DEBUG_ONLY} == "true" ]] || [[ ${_DEBUG_OUTPUT} == "true" ]] ; then
-      # shellcheck disable=SC2145
-      echo "Running $@"
-    fi
-    if [[ ${_DEBUG_ONLY} == "false" ]]; then
-      "$@"
-    fi
-  fi
-fi
+}
+
+start_runner "$@" &
+wait $!
